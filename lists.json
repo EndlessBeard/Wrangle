@@ -1,0 +1,5 @@
+[
+	{ "title": "Fruit", "items": ["Apple", "Banana", "Cherry", "Date"] },
+	{ "title": "Color", "items": ["Red", "Green", "Blue", "Yellow"] },
+	{ "title": "Animal", "items": ["Dog", "Cat", "Bird", "Fish"] }
+]
