@@ -48,7 +48,7 @@ function App() {
   const [inputText, setInputText] = useState('Lorem ipsum dolor sit amet, consectetur adipiscing elit.\nSed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\nUt enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.');
   const outputText = `Output will appear here.\nThis field is also scrollable and collapsible.`;
   const textRef = useRef();
-  const { lists, addList } = useListManager();
+  const { lists, addList, updateList } = useListManager();
   // List+ mechanic state for Input
   const [selections, setSelections] = useState([]); // {id, label}
   const nextId = useRef(1);
@@ -66,6 +66,11 @@ function App() {
   const [showAddListModal, setShowAddListModal] = useState(false);
   const [newListTitle, setNewListTitle] = useState('');
   const [newListItemsText, setNewListItemsText] = useState('');
+  const [showHamburgerMenu, setShowHamburgerMenu] = useState(false);
+  const [showEditListModal, setShowEditListModal] = useState(false);
+  const [editListIndex, setEditListIndex] = useState(0);
+  const [editListItemsText, setEditListItemsText] = useState('');
+  const [convertedOutput, setConvertedOutput] = useState('');
    
 
   // Initialize content once
@@ -103,6 +108,55 @@ function App() {
       }
     }
   });
+
+  // Convert contenteditable DOM to output string, replacing selection components
+  const nodeToOutputText = (node) => {
+    if (!node) return '';
+    const NODE_TYPE = node.nodeType;
+    if (NODE_TYPE === Node.TEXT_NODE) {
+      return node.nodeValue || '';
+    }
+    if (NODE_TYPE === Node.ELEMENT_NODE) {
+      const el = node;
+      const tag = el.tagName;
+      if (tag === 'BR') return '\n';
+      // If this element represents a selection component (has data-listid)
+      if (el.getAttribute && el.getAttribute('data-listid')) {
+        const optsAttr = el.getAttribute('data-selected-options') || '';
+        const items = optsAttr.split(',').map(s => s.trim()).filter(Boolean);
+        if (items.length) {
+          // join with | inside braces
+          return `{${items.map(s => s.replace(/([{}])/g,'\\$1')).join('|')}}`;
+        }
+        // fallback: use displayed label
+        const label = el.textContent || '';
+        return `{${label}}`;
+      }
+      // Otherwise recursively process children
+      let out = '';
+      el.childNodes.forEach((child) => {
+        out += nodeToOutputText(child);
+      });
+      // Treat block elements as having a newline after
+      if (['DIV', 'P'].includes(tag)) out += '\n';
+      return out;
+    }
+    return '';
+  };
+
+  // Update convertedOutput whenever the input HTML changes
+  React.useEffect(() => {
+    try {
+      if (!inputRef.current) {
+        setConvertedOutput('');
+        return;
+      }
+      const result = nodeToOutputText(inputRef.current).replace(/\u00A0/g, ' ');
+      setConvertedOutput(result);
+    } catch (e) {
+      setConvertedOutput('');
+    }
+  }, [inputHTML]);
 
   // Insert label at caret position in contenteditable div
   const handleAddSelection = () => {
@@ -788,7 +842,7 @@ function App() {
             )}
           
           <CollapsibleTextField label="Output">
-            <pre>{outputText}</pre>
+            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{convertedOutput || outputText}</pre>
           </CollapsibleTextField>
         </div>
       </div>
