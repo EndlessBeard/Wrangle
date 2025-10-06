@@ -342,8 +342,26 @@ function App() {
 
 
   const handleCopy = () => {
-    if (textRef.current) {
-      navigator.clipboard.writeText(textRef.current.innerText);
+    const textToCopy = (typeof convertedOutput !== 'undefined' && convertedOutput) ? convertedOutput : outputText;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(textToCopy).catch(() => {
+        // fallback to older method
+        const ta = document.createElement('textarea');
+        ta.value = textToCopy;
+        ta.style.position = 'fixed'; ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        ta.remove();
+      });
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = textToCopy;
+      ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      ta.remove();
     }
   };
 
