@@ -3,8 +3,9 @@ import React, { useRef, useState, useEffect } from 'react';
 import './App.css';
 import { ListSelection } from './ListSelection.jsx';
 import { useListManager } from './ListManager.jsx';
+import { serializeInputNode, deserializeToFragment } from './utils/serializeInput.js';
 
-function CollapsibleTextField({ label, defaultOpen = false, children, showButtons, onListPlus, onUndo, onRedo, onOpen, onClose }) {
+function CollapsibleTextField({ label, defaultOpen = false, children, showButtons, onListPlus, onUndo, onRedo, onOpen, onClose, headerControls = null, arrowAtEnd = false }) {
   const [open, setOpen] = useState(defaultOpen);
 
   const handleToggle = () => {
@@ -21,10 +22,19 @@ function CollapsibleTextField({ label, defaultOpen = false, children, showButton
    
   return (
     <div className="collapsible-container">
-      <button className="collapsible-header" onClick={handleToggle}>
-        <span>{label}</span>
-        <span>{open ? '▲' : '▼'}</span>
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <button className="collapsible-header" onClick={handleToggle}>
+          <span>{label}</span>
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          {headerControls ? <div style={{ marginLeft: 12 }}>{headerControls}</div> : null}
+          {arrowAtEnd ? (
+            <button className="collapsible-arrow" onClick={handleToggle} style={{ marginLeft: 8, background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer' }}>{open ? '▲' : '▼'}</button>
+          ) : (
+            null
+          )}
+        </div>
+      </div>
       {open && (
         <>
           <div className="collapsible-content">
@@ -56,6 +66,10 @@ function App() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [activeSelection, setActiveSelection] = useState(null); // Track which selection is active
   const [inputHTML, setInputHTML] = useState(''); // Store the actual HTML content
+  const [savedPrompts, setSavedPrompts] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('wrangle_prompts') || '[]'); } catch { return []; }
+  });
+  const [selectedPromptIndex, setSelectedPromptIndex] = useState(-1);
   const [showListsModal, setShowListsModal] = useState(false);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [selectedListForComponent, setSelectedListForComponent] = useState(null);
@@ -399,9 +413,11 @@ function App() {
       </header>
       <div className="fields-container">
         <div ref={textRef} className="copy-source">
+          
           <CollapsibleTextField
             label="Input"
             defaultOpen={true}
+            arrowAtEnd={true}
             showButtons={true}
             onListPlus={handleAddSelection}
             onUndo={handleInputUndo}
@@ -419,6 +435,56 @@ function App() {
               setShowListsModal(false);
               setShowOptionsModal(false);
             }}
+            headerControls={(
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <select id="prompt-select" value={selectedPromptIndex} onChange={(e) => {
+                  const idx = parseInt(e.target.value, 10);
+                  setSelectedPromptIndex(isNaN(idx) ? -1 : idx);
+                  if (isNaN(idx) || idx < 0) return;
+                  const prompt = savedPrompts[idx];
+                  if (!prompt) return;
+                  const frag = deserializeToFragment(prompt.segments || []);
+                  const container = document.createElement('div');
+                  container.appendChild(frag);
+                  // Remap IDs
+                  const remap = {};
+                  container.querySelectorAll && container.querySelectorAll('span[data-listid]').forEach((sp) => {
+                    const old = sp.getAttribute('data-listid');
+                    const nid = nextId.current++;
+                    remap[old] = nid;
+                    sp.setAttribute('data-listid', nid);
+                  });
+                  // Move into input
+                  if (inputRef.current) {
+                    inputRef.current.innerHTML = '';
+                    while (container.firstChild) inputRef.current.appendChild(container.firstChild);
+                    setInputHTML(inputRef.current.innerHTML);
+                    // rebuild selections[] with selectedOptions and listTitle
+                    const newSels = [];
+                    inputRef.current.querySelectorAll('.inline-selection-component').forEach(sp => {
+                      const id = parseInt(sp.getAttribute('data-listid'));
+                      const label = sp.textContent || '';
+                      const opts = (sp.getAttribute('data-selected-options') || '').split(',').map(s => s.trim()).filter(Boolean);
+                      const listTitle = sp.getAttribute('data-listtitle') || null;
+                      newSels.push({ id, label, selectedOptions: opts, listTitle });
+                    });
+                    setSelections(newSels);
+                  }
+                }} style={{ padding: '0.25rem' }}>
+                  <option value={-1}>Select saved prompt</option>
+                  {savedPrompts.map((p, i) => <option key={i} value={i}>{p.name}</option>)}
+                </select>
+                <button className="modal-list-btn" onClick={() => {
+                  const name = prompt('Prompt name:');
+                  if (!name) return;
+                  const segs = serializeInputNode(inputRef.current);
+                  const p = { name, segments: segs, created: Date.now() };
+                  const next = [...savedPrompts, p];
+                  setSavedPrompts(next);
+                  localStorage.setItem('wrangle_prompts', JSON.stringify(next));
+                }}>Save Prompt</button>
+              </div>
+            )}
           >
             {/* Contenteditable div for Input field */}
             <div
@@ -447,12 +513,22 @@ function App() {
                   const listId = parseInt(e.target.getAttribute('data-listid'));
                   const isTogglingOff = activeSelection === listId;
                   setActiveSelection(isTogglingOff ? null : listId);
-                  
                   // Set the initial menu title when opening
                   if (!isTogglingOff) {
                     const span = document.querySelector(`[data-listid="${listId}"]`);
                     const currentLabel = span ? span.textContent : `List${listId}`;
                     setCurrentMenuTitle(currentLabel);
+                    // Populate Options UI state from span attributes
+                    if (span) {
+                      const opts = (span.getAttribute('data-selected-options') || '').split(',').map(s => s.trim()).filter(Boolean);
+                      const listTitle = span.getAttribute('data-listtitle') || null;
+                      setSelectedOptions(opts);
+                      if (listTitle) {
+                        // Find list by title and set selectedListForComponent
+                        const found = lists.find(l => l.title === listTitle);
+                        if (found) setSelectedListForComponent(found);
+                      }
+                    }
                   }
                 } else {
                   // Click elsewhere closes the menu
@@ -514,6 +590,15 @@ function App() {
                       const span = document.querySelector(`[data-listid="${listId}"]`);
                       const currentLabel = span ? span.textContent : `List${listId}`;
                       setNegCurrentMenuTitle(currentLabel);
+                      if (span) {
+                        const opts = (span.getAttribute('data-selected-options') || '').split(',').map(s => s.trim()).filter(Boolean);
+                        const listTitle = span.getAttribute('data-listtitle') || null;
+                        setNegSelectedOptions(opts);
+                        if (listTitle) {
+                          const found = lists.find(l => l.title === listTitle);
+                          if (found) setNegSelectedListForComponent(found);
+                        }
+                      }
                     }
                 } else {
                   // Click elsewhere closes the negative menu
