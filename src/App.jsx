@@ -475,13 +475,28 @@ function App() {
                   {savedPrompts.map((p, i) => <option key={i} value={i}>{p.name}</option>)}
                 </select>
                 <button className="modal-list-btn" onClick={() => {
-                  const name = prompt('Prompt name:');
-                  if (!name) return;
+                  const idx = selectedPromptIndex;
+                  const existingName = (idx >= 0 && savedPrompts[idx]) ? savedPrompts[idx].name : '';
+                  const name = prompt('Prompt name:', existingName);
+                  if (name === null) return; // cancelled
                   const segs = serializeInputNode(inputRef.current);
-                  const p = { name, segments: segs, created: Date.now() };
-                  const next = [...savedPrompts, p];
-                  setSavedPrompts(next);
-                  localStorage.setItem('wrangle_prompts', JSON.stringify(next));
+                  if (idx >= 0 && savedPrompts[idx]) {
+                    // Update existing prompt (preserve created)
+                    const prev = savedPrompts[idx];
+                    const updated = { ...prev, name, segments: segs, updated: Date.now() };
+                    const next = savedPrompts.slice();
+                    next[idx] = updated;
+                    setSavedPrompts(next);
+                    localStorage.setItem('wrangle_prompts', JSON.stringify(next));
+                  } else {
+                    // Create new prompt
+                    const p = { name, segments: segs, created: Date.now() };
+                    const next = [...savedPrompts, p];
+                    setSavedPrompts(next);
+                    localStorage.setItem('wrangle_prompts', JSON.stringify(next));
+                    // Select the newly created prompt
+                    setSelectedPromptIndex(next.length - 1);
+                  }
                 }}>Save Prompt</button>
               </div>
             )}
